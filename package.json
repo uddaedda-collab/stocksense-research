@@ -1,0 +1,20 @@
+{
+  "name": "stock-research-platform",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=@platform/web",
+    "dev:api": "npm run dev --workspace=@platform/api",
+    "build:shared": "npm run build --workspace=@platform/shared",
+    "build:web": "npm run build --workspace=@platform/web",
+    "build:api": "npm run build --workspace=@platform/api",
+    "test:shared": "npm run test --workspace=@platform/shared",
+    "test:web": "npm run test --workspace=@platform/web",
+    "test:api": "npm run test --workspace=@platform/api",
+    "test": "npm run test:shared && npm run test:api && npm run test:web"
+  }
+}
