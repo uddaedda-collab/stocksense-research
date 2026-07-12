@@ -171,11 +171,114 @@ Completed this session:
   existing remote, and push to a feature branch (never main directly, per
   git safety rules) — then open a PR or push branch to be reviewed.
 
-### Still not started
-- [ ] Real Supabase + Firebase projects with actual keys filled into .env
-      (needed to test watchlist/portfolio/admin/auth end-to-end, not just
-      via automated tests which mock/bypass auth)
-- [ ] Actual live deployment (nothing is hosted anywhere yet — code only)
+## Session 4 update — real Supabase project connected
+
+- User created a real Supabase project (org: uddaedda-collab's Org, project:
+  "uddaedda-collab's Project", region ap-southeast-2/Sydney) via GitHub login.
+- Filled apps/api/.env with real SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+  (using Supabase's new `sb_secret_...` key format). This file is gitignored,
+  never committed.
+- Agent connected directly to the Supabase Postgres instance using the `pg`
+  npm package and the database password, and ran apps/api/src/db/schema.sql
+  programmatically (via the session pooler host
+  aws-0-ap-southeast-2.pooler.supabase.com:5432 — the direct db.<ref>.supabase.co
+  host did not resolve via DNS, pooler host did). Verified via
+  information_schema query: all 5 tables exist (api_logs, portfolio_holdings,
+  price_alerts, user_profiles, watchlist_items). Temporary one-off scripts
+  used for this were deleted afterward — not part of the committed codebase.
+- Repo pushed to GitHub: https://github.com/uddaedda-collab/stocksense-research
+  (private repo, main branch, CI workflow active).
+- Git identity set to uddaedda-collab / GitHub noreply email (no public
+  name/email was set on the GitHub profile).
+
+## Session 5 update — real Firebase project connected, backend fully live-tested
+
+- User created a real Firebase project ("stocksense-research", Spark/free
+  plan) via Google login. Enabled Email/Password + Google sign-in providers.
+- User registered a web app in Firebase console, agent extracted the config
+  (apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId)
+  from the on-screen snippet and wrote apps/web/.env.local directly — no
+  manual file editing needed from the user.
+- User downloaded the Firebase Admin SDK service account JSON (private key)
+  and placed it in the workspace root (~/Desktop/kiro/). Agent read it,
+  extracted project_id/client_email/private_key into apps/api/.env, then
+  DELETED the downloaded JSON file from disk (private keys must never sit
+  around as loose files — value is now only in the gitignored .env).
+- Verified end-to-end: rebuilt apps/api (npm run build:api), ran the compiled
+  production server, confirmed zero env warnings (both Supabase and Firebase
+  admin credentials loaded correctly), and hit a real live data endpoint
+  (/api/stocks/TCS/quote) — returned real current TCS price/volume data.
+- Agent set all 6 NEXT_PUBLIC_FIREBASE_* values as GitHub Actions repository
+  secrets via `gh secret set` (used for the deploy-web.yml workflow) — no
+  manual GitHub UI steps needed from the user for this part.
+
+## Session 6 update — FRONTEND IS LIVE
+
+- User confirmed repo could go public (re-verified via `git ls-files` that
+  no .env/.env.local/service-account JSON was ever committed — only
+  package.json/tsconfig.json matched a `.json` filename grep, both harmless).
+- Agent made the repo public via `gh repo edit --visibility public`.
+- Agent enabled GitHub Pages via `gh api -X POST .../pages -f build_type=workflow`.
+- Agent triggered the deploy-web.yml workflow via `gh workflow run` — build
+  and deploy jobs both succeeded (52s + 8s).
+- **Live URL confirmed working (HTTP 200): https://uddaedda-collab.github.io/stocksense-research/**
+- Frontend UI is fully live and browsable. Live stock data will not appear
+  yet because NEXT_PUBLIC_API_BASE_URL still points to localhost (baked in
+  at build time) — backend is not deployed yet, see below.
+
+## Session 7 update — real Supabase & Firebase creds wired end-to-end, Render build bug fixed
+
+- User created the Supabase service account keys correctly and provided them;
+  agent wrote apps/api/.env with real SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY,
+  FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY (extracted from a downloaded
+  service-account JSON, which was deleted from disk immediately after reading
+  — private keys must never sit around as loose files).
+- Verified locally: rebuilt apps/api, ran the compiled prod server, zero env
+  warnings, confirmed a real live data endpoint returns correct data.
+- Set all 6 NEXT_PUBLIC_FIREBASE_* values as GitHub Actions repo secrets via
+  `gh secret set` — no manual GitHub UI steps needed from the user.
+- Made the repo public (re-verified via `git ls-files` first that no .env/
+  service-account JSON was ever committed) and enabled GitHub Pages via
+  `gh api -X POST .../pages -f build_type=workflow`.
+- Triggered deploy-web.yml — **frontend is live and confirmed working (HTTP 200)
+  at https://uddaedda-collab.github.io/stocksense-research/**. UI/pages all
+  render; live stock data not yet visible because backend isn't deployed.
+- User began Render backend deployment (New Web Service, connected GitHub
+  repo, filled in Root Directory=apps/api, Build/Start commands, Free
+  instance, all 9 env vars including FIREBASE_PRIVATE_KEY). First deploy
+  attempt FAILED at build time.
+
+### Bug found & fixed: TypeScript build failure on Render
+Render's fresh `npm install` on Linux errored with:
+`tsconfig.json: error TS5102: Option 'moduleResolution=node' is deprecated
+and will stop functioning in TypeScript 7.0`
+Root cause: explicit `"moduleResolution": "Node"` in apps/api/tsconfig.json
+and packages/shared/tsconfig.json is a legacy/deprecated setting as of newer
+TypeScript minor versions, even though the pinned `typescript` version
+(5.5.4) is identical locally and on Render — the deprecation warning
+threshold changed in a TS 5.5.x patch release, and it wasn't caught locally
+because cached local node_modules avoided a truly fresh resolution.
+Fix: removed the `moduleResolution` line entirely from both tsconfig.json
+files (module: "CommonJS" alone is sufficient for TS to infer the correct
+resolution strategy — this is the cleaner, version-proof fix vs. adding
+`ignoreDeprecations`, which was tried first but is just a band-aid).
+Verified: clean `npm install` (deleted all node_modules first), rebuilt
+shared+api+web, reran full test suite (83/83 passing), all green.
+Committed and will be pushed — Render should be manually redeployed
+(or will auto-deploy on next push if auto-deploy is enabled) to pick up the fix.
+
+### Still needed from the user (cannot be automated)
+- [ ] Retry/trigger the Render deploy now that the tsconfig fix is pushed
+      (Render dashboard -> service -> "Manual Deploy" -> "Deploy latest commit",
+      or it may auto-deploy on push depending on settings).
+- [ ] Once Render deploy succeeds, copy the resulting service URL
+      (looks like https://stocksense-research.onrender.com) and give it to
+      the agent, which will: set it as NEXT_PUBLIC_API_BASE_URL GitHub
+      secret via `gh secret set`, and re-run the deploy-web workflow so the
+      frontend's static build points at the real backend.
+- [ ] Double check CORS_ORIGIN env var on Render is exactly
+      `https://uddaedda-collab.github.io` (no trailing slash) — already
+      set this way during initial service creation, just confirm after deploy.
 - [ ] Chrome Extension (Phase 4) — folder still empty
 - [ ] Flutter Android app (Phase 5) — folder still empty
 - [ ] Lighthouse audit against a live URL (can't run meaningfully against
