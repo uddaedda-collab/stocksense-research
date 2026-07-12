@@ -15,10 +15,50 @@ interface Breadth {
   total: number;
 }
 
+interface HorizonView {
+  horizon: 'short' | 'medium' | 'long';
+  direction: 'bullish' | 'bearish' | 'sideways';
+  probabilityScore: number;
+  confidencePercent: number;
+  niftyView: { direction: string; probabilityScore: number };
+  sensexView: { direction: string; probabilityScore: number };
+  factors: string[];
+}
+
+interface MarketDirection {
+  asOf: string;
+  preMarketBias: 'positive' | 'negative' | 'neutral';
+  preMarketAvgGlobalChangePercent: number;
+  preMarketNote: string;
+  horizons: HorizonView[];
+  disclaimer: string;
+}
+
+const HORIZON_LABELS: Record<string, string> = {
+  short: 'Short Term (days-2 weeks)',
+  medium: 'Medium Term (1-3 months)',
+  long: 'Long Term (6-12 months)',
+};
+
+const DIRECTION_COLOR: Record<string, string> = {
+  bullish: 'text-green-600',
+  bearish: 'text-red-600',
+  sideways: 'text-amber-600',
+};
+
+const BIAS_COLOR: Record<string, string> = {
+  positive: 'text-green-600',
+  negative: 'text-red-600',
+  neutral: 'text-gray-500',
+};
+
 export function MarketClient() {
   const { data: sectorData, loading: sectorLoading } = useApi<{ indices: IndexQuote[] }>('/api/market/sector-indices');
   const { data: breadth, loading: breadthLoading } = useApi<Breadth>('/api/market/breadth');
   const { data: globalData, loading: globalLoading } = useApi<{ markets: IndexQuote[] }>('/api/market/global');
+  const { data: direction, loading: directionLoading, error: directionError } = useApi<MarketDirection>(
+    '/api/market/direction'
+  );
 
   return (
     <div className="space-y-6">
@@ -27,6 +67,52 @@ export function MarketClient() {
       <section>
         <h2 className="mb-3 text-lg font-semibold">Key Indices</h2>
         <IndexTicker />
+      </section>
+
+      <section className="card space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold">Market Direction Outlook</h2>
+          {direction && (
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              Pre-market bias:{' '}
+              <span className={`font-semibold capitalize ${BIAS_COLOR[direction.preMarketBias]}`}>
+                {direction.preMarketBias}
+              </span>
+            </span>
+          )}
+        </div>
+
+        {directionLoading && <CardSkeleton />}
+        {directionError && <p className="text-sm text-red-600">Market direction outlook is temporarily unavailable.</p>}
+
+        {direction && (
+          <>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{direction.preMarketNote}</p>
+            <div className="grid gap-4 sm:grid-cols-3">
+              {direction.horizons.map((h) => (
+                <div key={h.horizon} className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{HORIZON_LABELS[h.horizon]}</p>
+                  <p className={`mt-1 text-xl font-bold capitalize ${DIRECTION_COLOR[h.direction]}`}>{h.direction}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Probability lean: {h.probabilityScore}% · Confidence: {h.confidencePercent}%
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    NIFTY: <span className="capitalize">{h.niftyView.direction}</span> ({h.niftyView.probabilityScore}%) ·
+                    {' '}SENSEX: <span className="capitalize">{h.sensexView.direction}</span> ({h.sensexView.probabilityScore}%)
+                  </p>
+                  {h.factors.length > 0 && (
+                    <ul className="mt-2 list-inside list-disc text-xs text-gray-600 dark:text-gray-300">
+                      {h.factors.slice(0, 3).map((f, i) => (
+                        <li key={i}>{f}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+            <DisclaimerBox text={direction.disclaimer} />
+          </>
+        )}
       </section>
 
       <section className="card">

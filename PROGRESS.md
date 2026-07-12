@@ -308,12 +308,62 @@ not a code file, so no repo commit was needed for this fix.
   sleep after ~15 min idle; first request after sleep takes 30-50s to wake
   the container. No fix without a paid plan — this is expected behavior.
 
+## Session 8 — Post-launch bug sweep + market direction indicator
+
+### Critical bug found and fixed: Yahoo Finance quoteSummary 401
+User reported /profile, /fundamentals, /ai-analysis, /news, /compare all
+returning 500 errors on the live site. Root cause: Yahoo Finance added a
+requirement for a session cookie + CSRF "crumb" token on the quoteSummary
+endpoint (used for fundamentals/company profile) — it used to work fully
+unauthenticated. This broke silently because it wasn't caught in earlier
+testing (the endpoint worked without auth until Yahoo's change took effect).
+Fix: apps/api/src/services/yahooFinance.ts now fetches a cookie from
+fc.yahoo.com and a crumb from query1.finance.yahoo.com/v1/test/getcrumb
+(using Node's built-in `https` module, not node-fetch — node-fetch v3 had a
+header-parsing issue against Yahoo's cookie response), caches them in
+memory, appends the crumb as a query param on quoteSummary requests, and
+auto-refreshes on 401/403. Verified against live Yahoo endpoints multiple
+times and via the local server — /profile, /fundamentals, /ai-analysis,
+/news, /compare, /screener all confirmed returning real data again.
+Full test suite re-run: 105/105 passing after the fix.
+
+### GIFT NIFTY — investigated, NOT free/legally available, documented tradeoff
+Searched Yahoo Finance chart API (10+ candidate tickers) and Yahoo's search
+API directly — GIFT NIFTY (traded on NSE IX / GIFT City) has no free public
+data feed anywhere; only paid vendors (Groww, ICICI Direct, etc. pull it via
+private/paid feeds). Adding it would require either a paid API or scraping
+a third-party site's rendered page (against ToS, unreliable, and violates
+the "free and legal only" project constraint). Did NOT add it.
+Instead, added a legal equivalent: the new /api/market/direction endpoint
+uses overnight US/Asian market moves (Dow, S&P, Nasdaq, Nikkei, Hang Seng —
+already free via Yahoo) as a "pre-market bias" signal, clearly labeled as a
+proxy for what GIFT Nifty is normally used for, with an explicit note
+explaining why GIFT Nifty itself isn't available.
+
+### NEW FEATURE: Market Direction Indicator
+Added GET /api/market/direction — combines NIFTY 50 + SENSEX 2-year price
+history through the existing rule-based prediction engine
+(packages/shared/src/prediction.ts, already used for individual stocks) to
+produce short/medium/long-term bullish/bearish/sideways outlooks with
+probability + confidence scores and explainable factors, plus the
+pre-market global-sentiment proxy described above. Surfaced on the /market
+page as a new "Market Direction Outlook" card above Market Breadth.
+Verified locally with real data (returns sensible, differentiated
+short/medium/long views). Build passes (45 static pages), full test suite
+passes (105/105).
+
 ### Still needed from the user (cannot be automated)
-- [ ] None for basic functionality — the platform is now fully live.
-      Remaining optional work: PWA icon polish, admin panel manual testing
+- [ ] Push these fixes live: redeploy apps/api on Render (auto-deploys on
+      push if enabled, else Manual Deploy) and re-run deploy-web.yml for
+      the frontend market direction widget.
+- [ ] Remaining optional work: PWA icon polish, admin panel manual testing
       as the ADMIN_EMAILS user, Lighthouse audit against the live URL,
-      Chrome Extension (Phase 4), Flutter app (Phase 5), README/docs
-      updates with the real live URLs.
+      Chrome Extension (Phase 4), Flutter app (Phase 5).
+- [ ] Ongoing risk (documented): Yahoo Finance is an unofficial/unauthenticated
+      data source and can change behavior again without notice (as it just
+      did with the crumb requirement). If data suddenly breaks again, check
+      this class of issue first — cookie/crumb requirements, rate limiting,
+      or endpoint deprecation are the most likely causes.
 - [ ] Once Render deploy succeeds, copy the resulting service URL
       (looks like https://stocksense-research.onrender.com) and give it to
       the agent, which will: set it as NEXT_PUBLIC_API_BASE_URL GitHub

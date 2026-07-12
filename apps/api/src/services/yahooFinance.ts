@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import https from 'https';
 import type { HistoricalBar, Quote } from '@platform/shared';
 
 // ---------------------------------------------------------------------------
@@ -19,12 +20,79 @@ import type { HistoricalBar, Quote } from '@platform/shared';
 const CHART_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
 const QUOTE_SUMMARY_BASE = 'https://query2.finance.yahoo.com/v10/finance/quoteSummary';
 const SEARCH_BASE = 'https://query1.finance.yahoo.com/v1/finance/search';
+const CRUMB_COOKIE_URL = 'https://fc.yahoo.com';
+
+const CRUMB_URL = 'https://query1.finance.yahoo.com/v1/test/getcrumb';
 
 const DEFAULT_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
   Accept: 'application/json',
 };
+
+// ---------------------------------------------------------------------------
+// Yahoo's quoteSummary endpoint (used for fundamentals/company profile) now
+// requires a session cookie + "crumb" CSRF token, even for public data - a
+// change Yahoo rolled out to reduce unauthenticated scraping. The chart and
+// search endpoints still work without this. We fetch the cookie+crumb pair
+// once and cache it in memory (crumbs are valid for a while), refreshing on
+// failure. This is still using only Yahoo's public, unauthenticated web
+// session flow - no API key or paid account involved.
+// ---------------------------------------------------------------------------
+let cachedCookie: string | null = null;
+let cachedCrumb: string | null = null;
+let crumbFetchPromise: Promise<{ cookie: string; crumb: string }> | null = null;
+
+/**
+ * Plain `https` GET (not node-fetch) - node-fetch v3 was observed to fail
+ * against Yahoo's cookie-setting endpoint (header parsing issue), while
+ * Node's built-in https module handles it correctly. Used only for the
+ * crumb/cookie handshake; all other Yahoo requests still use node-fetch.
+ */
+function httpsGet(url: string, headers: Record<string, string>): Promise<{ status: number; headers: any; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers, maxHeaderSize: 65536 }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => {
+        body += chunk;
+      });
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+    });
+    req.on('error', reject);
+  });
+}
+
+async function fetchCrumb(): Promise<{ cookie: string; crumb: string }> {
+  // NOTE: only send User-Agent here, not the JSON Accept header used
+  // elsewhere - the crumb endpoint returns plain text and Yahoo responds
+  // with 406 Not Acceptable if Accept: application/json is sent.
+  const crumbHeaders = { 'User-Agent': DEFAULT_HEADERS['User-Agent'] };
+
+  const cookieResponse = await httpsGet(CRUMB_COOKIE_URL, crumbHeaders);
+  const setCookie = cookieResponse.headers['set-cookie'] as string[] | undefined;
+  const cookie = setCookie ? setCookie.map((c) => c.split(';')[0]).join('; ') : '';
+
+  const crumbResponse = await httpsGet(CRUMB_URL, { ...crumbHeaders, Cookie: cookie });
+  if (crumbResponse.status !== 200) {
+    throw new Error(`Failed to fetch Yahoo Finance crumb: status ${crumbResponse.status}`);
+  }
+  const crumb = crumbResponse.body.trim();
+  return { cookie, crumb };
+}
+
+async function getCrumbAndCookie(forceRefresh = false): Promise<{ cookie: string; crumb: string }> {
+  if (!forceRefresh && cachedCookie && cachedCrumb) {
+    return { cookie: cachedCookie, crumb: cachedCrumb };
+  }
+  if (!crumbFetchPromise || forceRefresh) {
+    crumbFetchPromise = fetchCrumb().then((result) => {
+      cachedCookie = result.cookie;
+      cachedCrumb = result.crumb;
+      return result;
+    });
+  }
+  return crumbFetchPromise;
+}
 
 interface YahooChartResponse {
   chart: {
@@ -209,10 +277,27 @@ export interface FundamentalsRaw {
   employees: number | null;
 }
 
+async function fetchQuoteSummaryWithAuth(symbol: string, modules: string): Promise<QuoteSummaryResponse> {
+  let { cookie, crumb } = await getCrumbAndCookie();
+  let url = `${QUOTE_SUMMARY_BASE}/${encodeURIComponent(symbol)}?modules=${modules}&crumb=${encodeURIComponent(crumb)}`;
+  let response = await fetch(url, { headers: { ...DEFAULT_HEADERS, Cookie: cookie } });
+
+  if (response.status === 401 || response.status === 403) {
+    // Crumb likely expired/invalid - refresh once and retry.
+    ({ cookie, crumb } = await getCrumbAndCookie(true));
+    url = `${QUOTE_SUMMARY_BASE}/${encodeURIComponent(symbol)}?modules=${modules}&crumb=${encodeURIComponent(crumb)}`;
+    response = await fetch(url, { headers: { ...DEFAULT_HEADERS, Cookie: cookie } });
+  }
+
+  if (!response.ok) {
+    throw new Error(`Upstream data request failed with status ${response.status} for ${url}`);
+  }
+  return (await response.json()) as QuoteSummaryResponse;
+}
+
 export async function fetchFundamentals(symbol: string): Promise<FundamentalsRaw> {
   const modules = 'summaryDetail,defaultKeyStatistics,financialData,assetProfile';
-  const url = `${QUOTE_SUMMARY_BASE}/${encodeURIComponent(symbol)}?modules=${modules}`;
-  const data = await fetchJson<QuoteSummaryResponse>(url);
+  const data = await fetchQuoteSummaryWithAuth(symbol, modules);
 
   if (data.quoteSummary.error) {
     throw new Error(`Yahoo Finance error for ${symbol}: ${data.quoteSummary.error.description}`);
