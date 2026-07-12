@@ -1,5 +1,6 @@
 import type {
   CompanyProfile,
+  CorporateActions,
   FundamentalSnapshot,
   HistoricalBar,
   IndexQuote,
@@ -8,6 +9,7 @@ import type {
 import { env } from '../config/env';
 import { cached } from './cache';
 import {
+  fetchCorporateActions,
   fetchFundamentals,
   fetchHistoricalBars,
   fetchQuote,
@@ -84,6 +86,13 @@ export async function getCompanyProfile(inputSymbol: string): Promise<CompanyPro
     employees: raw.employees,
     exchange: meta?.exchange ?? (symbol.endsWith('.BO') ? 'BSE' : 'NSE'),
   };
+}
+
+export async function getCorporateActions(inputSymbol: string): Promise<CorporateActions> {
+  const symbol = toYahooSymbol(inputSymbol);
+  return cached(`corporate-actions:${symbol}`, env.CACHE_TTL_HISTORY_SECONDS, () =>
+    fetchCorporateActions(symbol)
+  );
 }
 
 export async function getIndexQuotes(): Promise<IndexQuote[]> {

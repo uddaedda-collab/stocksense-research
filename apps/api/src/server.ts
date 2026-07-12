@@ -1,9 +1,11 @@
 import { createApp } from './app';
 import { env } from './config/env';
+import { startAlertChecker } from './services/alertChecker';
 
 const app = createApp();
 
 app.listen(env.PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`[api] Stock Research Platform API listening on port ${env.PORT} (${env.NODE_ENV})`);
+  startAlertChecker();
 });

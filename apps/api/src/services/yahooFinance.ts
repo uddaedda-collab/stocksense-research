@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import https from 'https';
-import type { HistoricalBar, Quote } from '@platform/shared';
+import type { CorporateActions, HistoricalBar, Quote } from '@platform/shared';
 
 // ---------------------------------------------------------------------------
 // Free market-data client built on Yahoo Finance's public, unauthenticated
@@ -122,6 +122,10 @@ interface YahooChartResponse {
           volume: (number | null)[];
         }>;
       };
+      events?: {
+        dividends?: Record<string, { amount: number; date: number }>;
+        splits?: Record<string, { date: number; numerator: number; denominator: number; splitRatio: string }>;
+      };
     }>;
     error: { code: string; description: string } | null;
   };
@@ -178,6 +182,39 @@ export async function fetchHistoricalBars(
   }
 
   return bars;
+}
+
+/**
+ * Corporate actions (dividend and stock split history) - real data pulled
+ * from Yahoo's public chart endpoint's `events` block (events=div,splits),
+ * which is fetched anyway for historical bars but was previously discarded.
+ * No paid data vendor needed; this covers a real gap (dividend/split
+ * history) using data already available for free.
+ */
+export async function fetchCorporateActions(symbol: string): Promise<CorporateActions> {
+  const url = `${CHART_BASE}/${encodeURIComponent(symbol)}?range=10y&interval=1mo&events=div,splits`;
+  const data = await fetchJson<YahooChartResponse>(url);
+
+  if (data.chart.error) {
+    throw new Error(`Yahoo Finance error for ${symbol}: ${data.chart.error.description}`);
+  }
+  const result = data.chart.result?.[0];
+  const events = result?.events;
+
+  const dividends = Object.values(events?.dividends ?? {})
+    .map((d) => ({ date: new Date(d.date * 1000).toISOString().slice(0, 10), amount: d.amount }))
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  const splits = Object.values(events?.splits ?? {})
+    .map((s) => ({
+      date: new Date(s.date * 1000).toISOString().slice(0, 10),
+      numerator: s.numerator,
+      denominator: s.denominator,
+      ratio: s.splitRatio,
+    }))
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  return { symbol, dividends, splits };
 }
 
 export async function fetchQuote(symbol: string, displaySymbol: string, name: string, exchange: 'NSE' | 'BSE'): Promise<Quote> {

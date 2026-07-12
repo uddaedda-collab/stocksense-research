@@ -201,7 +201,11 @@ export function PortfolioClient() {
                     {formatINR(h.pnl, 0)} ({formatPercent(h.pnlPercent)})
                   </td>
                   <td className="py-2 pr-3">
-                    <button onClick={() => handleRemove(h.id)} className="btn-secondary">
+                    <button
+                      onClick={() => handleRemove(h.id)}
+                      aria-label={`Remove ${h.symbol} holding from portfolio`}
+                      className="btn-secondary"
+                    >
                       Remove
                     </button>
                   </td>

@@ -377,6 +377,116 @@ passes (105/105).
 - [ ] Lighthouse audit against a live URL (can't run meaningfully against
       localhost/static files the same way; needs real deployment first)
 
+## Session 9 — "production-grade audit" pass (user requested full QA sweep)
+
+Ran a full gap-analysis audit via sub-agent (9 categories: missing pages,
+dead code, build health, lint health, test health, accessibility,
+responsive design, security, corporate actions/earnings/options coverage).
+Findings and fixes below.
+
+### Fixed: ESLint was completely unconfigured in both apps
+`npm run lint` failed outright in apps/api (no config file existed despite
+a lint script referencing it) and would have hung on an interactive setup
+prompt in apps/web (next lint's first-run wizard). Added
+apps/api/.eslintrc.json (@typescript-eslint recommended rules) and
+apps/web/.eslintrc.json (next/core-web-vitals). Added missing
+@typescript-eslint/eslint-plugin, @typescript-eslint/parser, eslint as
+devDependencies to apps/api (apps/web already had eslint deps, just no
+config). Both `npm run lint` commands now run non-interactively and pass
+with zero errors/warnings.
+
+### Fixed: missing Alerts frontend page
+apps/api/src/routes/alerts.ts (price alert CRUD) had no frontend page and
+no Sidebar entry - a real functional gap since the whole point of alerts is
+to see and manage them. Added apps/web/src/app/alerts/ (page.tsx +
+AlertsClient.tsx): create alert form (symbol/target price/above-below),
+alerts table with triggered/active status badges, remove action. Added to
+Sidebar nav between Portfolio and Heatmap.
+
+### Fixed: alerts were created but NEVER evaluated (silent no-op feature)
+Alerts had a `triggered` boolean column but nothing in the codebase ever
+set it to true - alerts would sit "Active" forever regardless of price
+movement, a functionally broken feature. Added
+apps/api/src/services/alertChecker.ts: an in-process background job
+(setInterval every 5 min, plus one run 15s after server startup) that
+fetches live quotes for all symbols with active alerts and marks matching
+alerts as triggered. Started from server.ts on boot. Documented the Render
+free-tier caveat (process sleeps when idle, so checks are "best effort
+periodic" not real-time) directly in the Alerts page disclaimer text.
+
+### Fixed: accessibility gap
+PortfolioClient.tsx's "Remove" button lacked a per-row aria-label (unlike
+the equivalent Watchlist/Alerts remove buttons, which do specify the
+symbol) - screen reader users couldn't tell which holding a given Remove
+button referred to when multiple rows exist. Added
+`aria-label="Remove {symbol} holding from portfolio"`.
+
+### NEW FEATURE: Corporate actions (dividend + stock split history) - real data, previously unused
+The audit found NO corporate actions/dividend history/split history
+anywhere in the app, despite this being explicitly requested. Investigated
+Yahoo's chart endpoint (already called for price history with
+`events=div,splits` in the URL) and confirmed it returns real dividend
+amounts+dates and split ratios+dates in a `chart.result[0].events` block
+that was being fetched but silently discarded. Added:
+- CorporateActions/DividendEvent/SplitEvent types in packages/shared/src/types.ts
+- fetchCorporateActions() in apps/api/src/services/yahooFinance.ts (parses
+  the previously-ignored events block)
+- getCorporateActions() in marketData.ts (cached)
+- GET /api/stocks/:symbol/corporate-actions route
+- CorporateActionsCard.tsx component, wired into the stock detail page
+  between Fundamentals and Technicals - shows dividend history table
+  (date + amount/share) and split/bonus history table (date + ratio).
+Verified locally with real RELIANCE.NS data (5 dividend payouts + 1 stock
+split returned correctly).
+
+### Investigated, confirmed NOT feasible without paid/illegal data: earnings calendar, options chain
+- **Earnings calendar**: Yahoo's free chart/quoteSummary endpoints used
+  here don't expose upcoming earnings dates without additional
+  quoteSummary modules (`calendarEvents`, `earnings`) that were not part of
+  the already-fixed cookie+crumb flow scope investigated this session -
+  NOT implemented this session, flagged as a candidate for a future
+  session (would reuse the same authenticated quoteSummary path already
+  built for fundamentals, just needs the extra module added + tested).
+- **Options chain (calls/puts, IV, OI, strikes)**: Yahoo's free options
+  endpoint (`v7/finance/options/`) exists but is India-market-incomplete
+  and even less reliable than the equity endpoints already dealing with
+  new auth requirements; NSE's real options chain data requires either
+  NSE's own (ToS-restricted, frequently blocked) endpoints or a paid
+  vendor. NOT implemented — would violate the free/legal-only constraint
+  if scraped, and Yahoo's coverage for Indian options is too sparse to be
+  useful. Documented as a known, deliberate gap.
+- **Economic calendar** (forward-looking events, distinct from the
+  existing /economy live-indicator snapshot page): no free source
+  identified this session. NOT implemented.
+
+### Verification performed this session
+- `npm run build --workspace=@platform/shared|api|web`: all clean, zero
+  errors. Web now generates 46 static pages (was 45 - new /alerts page).
+- `npm run lint --workspace=@platform/api`: 0 errors/warnings (previously
+  didn't run at all).
+- `npm run lint --workspace=@platform/web` (next lint): 0 errors/warnings.
+- `npm run test` (full suite): 105/105 passing, unchanged pass count
+  (no test regressions from any of the above changes).
+- Manually verified new corporate-actions endpoint against local dev server
+  with real RELIANCE.NS data.
+
+### Still not done (explicitly out of scope this session, tracked here)
+- [ ] Earnings calendar (candidate: extend quoteSummary crumb-auth flow
+      with `calendarEvents` module — feasible, not yet done)
+- [ ] Options chain analysis (not feasible with free/legal data for NSE)
+- [ ] Economic calendar distinct from /economy (no free source found yet)
+- [ ] News auto-refresh every ~2 minutes + deduplication (current /news
+      and stock-level news pages fetch once on page load; no polling timer
+      exists yet; no dedup logic beyond what Google News RSS itself does)
+- [ ] Sentiment/impact classification beyond the existing simple
+      positive/negative/neutral keyword-based tagging in news.ts
+- [ ] Chrome Extension (Phase 4), Flutter app (Phase 5) — unchanged, still empty
+- [ ] Additional test coverage for the ~7 API route files still untested
+      beyond calculators/watchlist/symbols, and the ~25 web
+      components/pages still untested beyond format/recentlyViewed/PriceChange/DisclaimerBox
+- [ ] Push this session's commits live (Render auto-deploy + re-run
+      deploy-web.yml) once committed
+
 ## Next step (session 4+)
 1. Once git identity + gh auth are set up by the user: commit and push.
 2. Set up real Supabase project + Firebase project, fill in .env files.

@@ -5,6 +5,7 @@ import {
 } from '@platform/shared';
 import {
   getCompanyProfile,
+  getCorporateActions,
   getFundamentals,
   getHistoricalBars,
   getQuote,
@@ -99,6 +100,14 @@ stocksRouter.get(
       currentPrice: quote.price,
     });
     res.json(analysis);
+  })
+);
+
+stocksRouter.get(
+  '/:symbol/corporate-actions',
+  asyncHandler(async (req, res) => {
+    const actions = await getCorporateActions(req.params.symbol);
+    res.json(actions);
   })
 );
 

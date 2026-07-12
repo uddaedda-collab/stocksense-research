@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import type {
   AIAnalysis,
   CompanyProfile,
+  CorporateActions,
   FundamentalSnapshot,
   HistoricalBar,
   NewsItem,
@@ -21,6 +22,7 @@ import { TechnicalsPanel } from '@/components/stock/TechnicalsPanel';
 import { PredictionsPanel } from '@/components/stock/PredictionsPanel';
 import { AIAnalysisPanel } from '@/components/stock/AIAnalysisPanel';
 import { WatchlistButton } from '@/components/stock/WatchlistButton';
+import { CorporateActionsCard } from '@/components/stock/CorporateActionsCard';
 import { PriceChange } from '@/components/ui/PriceChange';
 import { NewsList } from '@/components/ui/NewsList';
 import { CardSkeleton } from '@/components/ui/Skeleton';
@@ -48,6 +50,7 @@ export function StockDetailClient({ symbol }: { symbol: string }) {
   );
   const { data: aiAnalysis } = useApi<AIAnalysis>(`/api/stocks/${symbol}/ai-analysis`);
   const { data: newsRes } = useApi<{ news: NewsItem[] }>(`/api/stocks/${symbol}/news`);
+  const { data: corporateActions } = useApi<CorporateActions>(`/api/stocks/${symbol}/corporate-actions`);
 
   if (quoteError) {
     return (
@@ -91,6 +94,7 @@ export function StockDetailClient({ symbol }: { symbol: string }) {
 
       {profile ? <CompanyProfileCard profile={profile} /> : <CardSkeleton />}
       {fundamentals ? <FundamentalsTable data={fundamentals} /> : <CardSkeleton />}
+      {corporateActions ? <CorporateActionsCard data={corporateActions} /> : <CardSkeleton />}
       {technicals ? <TechnicalsPanel data={technicals} /> : <CardSkeleton />}
       {predictionsRes ? <PredictionsPanel predictions={predictionsRes.predictions} /> : <CardSkeleton />}
       {aiAnalysis ? <AIAnalysisPanel data={aiAnalysis} /> : <CardSkeleton />}

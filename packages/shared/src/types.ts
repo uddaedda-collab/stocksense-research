@@ -194,6 +194,24 @@ export interface EconomyIndicator {
   asOf: string;
 }
 
+export interface DividendEvent {
+  date: string; // ISO date the dividend was paid/recorded
+  amount: number; // per-share amount in the stock's local currency
+}
+
+export interface SplitEvent {
+  date: string; // ISO date the split took effect
+  numerator: number;
+  denominator: number;
+  ratio: string; // e.g. "2:1"
+}
+
+export interface CorporateActions {
+  symbol: string;
+  dividends: DividendEvent[];
+  splits: SplitEvent[];
+}
+
 export interface WatchlistItem {
   id: string;
   userId: string;

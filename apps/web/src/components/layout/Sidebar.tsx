@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: '/compare', label: 'Compare', icon: '⚖️' },
   { href: '/watchlist', label: 'Watchlist', icon: '⭐' },
   { href: '/portfolio', label: 'Portfolio', icon: '💼' },
+  { href: '/alerts', label: 'Alerts', icon: '🔔' },
   { href: '/heatmap', label: 'Heatmap', icon: '🗺️' },
   { href: '/news', label: 'News', icon: '📰' },
   { href: '/economy', label: 'Economy', icon: '🌍' },
