@@ -281,9 +281,39 @@ runs them directly and doesn't need them pre-compiled via tsc.
 Verified: clean rebuild of both packages succeeds, full test suite (83/83)
 still passes via `npm run test`. Committed and pushed.
 
+### Third Render build failure & fix
+Build progressed further but failed with dozens of `TS2688: Cannot find
+declaration file for module 'express'` etc. errors. Root cause: the Render
+build command's `NODE_ENV` context caused `npm install` to skip
+devDependencies (where @types/* packages and typescript itself live) even
+though NODE_ENV wasn't explicitly the issue in isolation — combined with
+Render's environment, dev deps weren't present for the build step. Fix:
+user updated the Render Build Command to `cd ../.. && npm install
+--include=dev && npm run build --workspace=@platform/shared && npm run
+build --workspace=@platform/api`, forcing devDependencies to install for
+the build step regardless of NODE_ENV. This is a Render dashboard setting,
+not a code file, so no repo commit was needed for this fix.
+
+## SESSION MILESTONE: FULL STACK LIVE END TO END
+- Backend deployed successfully on Render free tier:
+  **https://stocksense-research.onrender.com** — verified /health returns
+  200 OK, and /api/stocks/RELIANCE/quote + /api/market/movers return real
+  live NSE stock data (confirmed via direct curl-equivalent requests).
+- Agent set NEXT_PUBLIC_API_BASE_URL as a GitHub secret via `gh secret set`
+  pointing at the Render URL, then re-triggered deploy-web.yml so the
+  static frontend build picks up the real backend URL.
+- Frontend re-deploy succeeded; **the live site now shows real stock data**
+  end-to-end: https://uddaedda-collab.github.io/stocksense-research/
+- Known free-tier tradeoff (documented, not a bug): Render free instances
+  sleep after ~15 min idle; first request after sleep takes 30-50s to wake
+  the container. No fix without a paid plan — this is expected behavior.
+
 ### Still needed from the user (cannot be automated)
-- [ ] Retry/trigger the Render deploy now that BOTH tsconfig fixes are pushed
-      (Render dashboard -> service -> "Manual Deploy" -> "Deploy latest commit").
+- [ ] None for basic functionality — the platform is now fully live.
+      Remaining optional work: PWA icon polish, admin panel manual testing
+      as the ADMIN_EMAILS user, Lighthouse audit against the live URL,
+      Chrome Extension (Phase 4), Flutter app (Phase 5), README/docs
+      updates with the real live URLs.
 - [ ] Once Render deploy succeeds, copy the resulting service URL
       (looks like https://stocksense-research.onrender.com) and give it to
       the agent, which will: set it as NEXT_PUBLIC_API_BASE_URL GitHub
