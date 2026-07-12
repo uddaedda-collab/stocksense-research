@@ -267,10 +267,23 @@ shared+api+web, reran full test suite (83/83 passing), all green.
 Committed and will be pushed — Render should be manually redeployed
 (or will auto-deploy on next push if auto-deploy is enabled) to pick up the fix.
 
+### Second Render build failure & fix
+After the moduleResolution fix, Render's build progressed further but then
+failed with `TS2307: Cannot find module 'vitest'` inside the *.test.ts files
+under packages/shared/src. Root cause: `tsc` was compiling test files too
+(tsconfig had `"include": ["src"]` with no exclude), and vitest types aren't
+installed in a production-only environment on Render, whereas locally
+devDependencies (including vitest) were present so it silently worked.
+Fix: added `"exclude": ["src/**/*.test.ts", "node_modules", "dist"]` to both
+apps/api/tsconfig.json and packages/shared/tsconfig.json — test files should
+never have been part of the production tsc build in the first place; vitest
+runs them directly and doesn't need them pre-compiled via tsc.
+Verified: clean rebuild of both packages succeeds, full test suite (83/83)
+still passes via `npm run test`. Committed and pushed.
+
 ### Still needed from the user (cannot be automated)
-- [ ] Retry/trigger the Render deploy now that the tsconfig fix is pushed
-      (Render dashboard -> service -> "Manual Deploy" -> "Deploy latest commit",
-      or it may auto-deploy on push depending on settings).
+- [ ] Retry/trigger the Render deploy now that BOTH tsconfig fixes are pushed
+      (Render dashboard -> service -> "Manual Deploy" -> "Deploy latest commit").
 - [ ] Once Render deploy succeeds, copy the resulting service URL
       (looks like https://stocksense-research.onrender.com) and give it to
       the agent, which will: set it as NEXT_PUBLIC_API_BASE_URL GitHub
